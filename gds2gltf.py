@@ -32,7 +32,7 @@ from pygltflib.validator import validate, summary
 # choose which GDSII layers to use
 
 # fmt: off
-layerstack = {    
+layerstack_sky130A = {    
     (235,4): {'name':'substrate', 'zmin':-2, 'zmax':0, 'color':[ 0.2, 0.2, 0.2, 1.0]},
     (64,20): {'name':'nwell', 'zmin':-0.5, 'zmax':0.01, 'color':[ 0.4, 0.4, 0.4, 1.0]},    
     # (65,44): {'name':'tap', 'zmin':0, 'zmax':0.1, 'color':[ 0.4, 0.4, 0.4, 1.0]},    
@@ -54,29 +54,55 @@ layerstack = {
 }
 # fmt: on
 
-# layerstack = {
-#     (235,4): {'name':'substrate', 'zmin':-1, 'zmax':0, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     # (64,20): {'name':'nwell', 'zmin':0, 'zmax':0.1, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     # (65,44): {'name':'tap', 'zmin':0, 'zmax':0.1, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     (65,20): {'name':'diff', 'zmin':-0.12, 'zmax':0.01, 'color':[ 0.9, 0.9, 0.9, 1.0]},
-#     (66,20): {'name':'poly', 'zmin':0, 'zmax':0.18, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     (66,44): {'name':'licon', 'zmin':0, 'zmax':0.936, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     (67,20): {'name':'li1', 'zmin':0.936, 'zmax':1.136, 'color':[ 0.9, 0.9, 0.9, 1.0]},
-#     (67,44): {'name':'mcon', 'zmin':1.011, 'zmax':1.376, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     (68,20): {'name':'met1', 'zmin':1.376, 'zmax':1.736, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     (68,44): {'name':'via', 'zmin':1.736,'zmax':2, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     (69,20): {'name':'met2', 'zmin':2, 'zmax':2.36, 'color':[ 0.9, 0.9, 0.9, 1.0]},
-#     (69,44): {'name':'via2', 'zmin':2.36, 'zmax':2.786, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     (70,20): {'name':'met3', 'zmin':2.786, 'zmax':3.631, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     (70,44): {'name':'via3', 'zmin':3.631, 'zmax':4.0211, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     (71,20): {'name':'met4', 'zmin':4.0211, 'zmax':4.8661, 'color':[ 0.9, 0.9, 0.9, 1.0]},
-#     (71,44): {'name':'via4', 'zmin':4.8661, 'zmax':5.371, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-#     (72,20): {'name':'met5', 'zmin':5.371, 'zmax':6.6311, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-#     # (83,44): { 'zmin':0, 'zmax':0.1, 'name':'text'},
-# }
+# fmt: off
+layerstack_sg13g2 = {
+    (235,4): {'name':'Substrate', 'zmin':-2.00, 'zmax': 0.00, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+    ( 31,0): {'name':'NWell',     'zmin':-0.50, 'zmax': 0.01, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+    (  1,0): {'name':'Activ',     'zmin':-0.12, 'zmax': 0.02, 'color':[ 0.9, 0.9, 0.9, 1.0]}, 
+    (  5,0): {'name':'GatPoly',   'zmin': 0.00, 'zmax': 0.16, 'color':[ 0.75, 0.35, 0.46, 1.0]},   
+    (  6,0): {'name':'Cont',      'zmin': 0.00, 'zmax': 0.64, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+    (  8,0): {'name':'Metal1',    'zmin': 0.64, 'zmax': 1.06, 'color':[ 1.0, 0.81, 0.55, 1.0]},  
+    (  9,0): {'name':'Via1',      'zmin': 1.06, 'zmax': 1.60, 'color':[ 0.2, 0.2, 0.2, 1.0]}, 
+    ( 10,0): {'name':'Metal2',    'zmin': 1.60, 'zmax': 2.09, 'color':[ 0.16, 0.38, 0.83, 1.0]},  
+    ( 29,0): {'name':'Via2',      'zmin': 2.09, 'zmax': 2.63, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+    ( 30,0): {'name':'Metal3',    'zmin': 2.63, 'zmax': 3.12, 'color':[ 0.65, 0.75, 0.9, 1.0]}, 
+    ( 49,0): {'name':'Via3',      'zmin': 3.12, 'zmax': 3.66, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
+    ( 50,0): {'name':'Metal4',    'zmin': 3.66, 'zmax': 4.15, 'color':[ 0.2, 0.62, 0.86, 1.0]},     
+    ( 66,0): {'name':'Via4',      'zmin': 4.15, 'zmax': 4.69, 'color':[ 0.2, 0.2, 0.2, 1.0]},   
+    ( 67,0): {'name':'Metal5',    'zmin': 4.69, 'zmax': 5.18, 'color':[ 0.15, 0.11, 0.38, 1.0]},     
+    (125,0): {'name':'TopVia1',   'zmin': 5.18, 'zmax': 6.07, 'color':[ 0.2, 0.2, 0.2, 1.0]},      
+    (126,0): {'name':'TopMetal1', 'zmin': 6.07, 'zmax': 8.07, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+    (133,0): {'name':'TopVia2',   'zmin': 8.07, 'zmax':10.87, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+    (134,0): {'name':'TopMetal2', 'zmin':10.87, 'zmax':13.87, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+}
+# fmt: on
+
+PDKS = {
+    "sky130A": {
+        "layerstack": layerstack_sky130A,
+        "cell_name_property": 61,
+    },
+    "sg13g2": {
+        "layerstack": layerstack_sg13g2,
+        "cell_name_property": 1,
+    },
+}
+DEFAULT_PDK = "sky130A"
 
 
-def gds2gltf(gdsii_file_path: str, gltf_file_path: str, enable_validate=False):
+def gds2gltf(
+    gdsii_file_path: str,
+    gltf_file_path: str,
+    pdk_name=DEFAULT_PDK,
+    enable_validate=False,
+):
+
+    pdk_config = PDKS.get(pdk_name, None)
+    if pdk_config:
+        layerstack = pdk_config["layerstack"]
+        cell_name_property = pdk_config["cell_name_property"]
+    else:
+        raise Exception(f"PDK {pdk_name} not supported")
 
     # First, the input file is read using the gdspy library, which interprets the
     # GDSII file and formats the data Python-style.
@@ -85,6 +111,7 @@ def gds2gltf(gdsii_file_path: str, gltf_file_path: str, enable_validate=False):
     # further processing.
 
     print("Reading GDSII file {}...".format(gdsii_file_path))
+    print(f"Using PDK: {pdk_name}")
     gdsii = gdspy.GdsLibrary()
     gdsii.read_gds(gdsii_file_path, units="import")
 
@@ -396,11 +423,10 @@ def gds2gltf(gdsii_file_path: str, gltf_file_path: str, enable_validate=False):
             instance_node = pygltflib.Node()
             instance_node.extras = {}
             instance_node.extras["type"] = ref.ref_cell.name
-            if ref.properties.get(61) == None:
-                # ref.ref_cell.name
+            if ref.properties.get(cell_name_property) == None:
                 instance_node.name = "???"
             else:
-                instance_node.name = ref.properties[61]
+                instance_node.name = ref.properties[cell_name_property]
 
             print(prefix, instance_node.name, "(", ref.ref_cell.name + ")")
             instance_node.translation = [ref.origin[0], ref.origin[1], 0]
@@ -465,6 +491,14 @@ def gds2gltf(gdsii_file_path: str, gltf_file_path: str, enable_validate=False):
 def main():
     parser = argparse.ArgumentParser(description="Convert GDSII to glTF")
     parser.add_argument("gds_file", type=str, help="Shuttle ID")
+    parser.add_argument(
+        "-p",
+        "--pdk",
+        type=str,
+        help="PDK name",
+        default=DEFAULT_PDK,
+        choices=PDKS.keys(),
+    )
     parser.add_argument("-o", "--output", type=str, help="Output file")
     parser.add_argument("--validate", action="store_true", help="Validate the output")
     args = parser.parse_args()
