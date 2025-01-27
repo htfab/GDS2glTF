@@ -13,6 +13,7 @@ pygltflib
 ```
 
 ## Usage:
+
 `python3 gds2gltf.py file.gds`
 
 Outputs a `file.gds.gltf` in the same folder as the original gds file
