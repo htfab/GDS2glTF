@@ -16,8 +16,9 @@ All units, including the units of the exported file, are the GDSII file's
 user units (often microns).
 """
 
+import math
 import sys  # read command-line arguments
-import gdspy  # open gds file
+import gdstk  # open gds file
 import numpy as np  # fast math on lots of points
 import triangle  # triangulate polygons
 import argparse  # parse command-line arguments
@@ -91,7 +92,7 @@ DEFAULT_PDK = "sky130A"
 
 
 def gds2gltf(
-    gdsii_file_path: str,
+    layout_file_path: str,
     gltf_file_path: str,
     pdk_name=DEFAULT_PDK,
     enable_validate=False,
@@ -104,16 +105,20 @@ def gds2gltf(
     else:
         raise Exception(f"PDK {pdk_name} not supported")
 
-    # First, the input file is read using the gdspy library, which interprets the
+    # First, the input file is read using the gdstk library, which interprets the
     # GDSII file and formats the data Python-style.
-    # See https://gdspy.readthedocs.io/en/stable/index.html for documentation.
+    # See https://heitzmann.github.io/gdstk/ for documentation.
     # Second, the boundaries of each shape (polygon or path) are extracted for
     # further processing.
 
-    print("Reading GDSII file {}...".format(gdsii_file_path))
-    print(f"Using PDK: {pdk_name}")
-    gdsii = gdspy.GdsLibrary()
-    gdsii.read_gds(gdsii_file_path, units="import")
+    if layout_file_path.endswith(".oas"):
+        print("Reading OASIS file {}...".format(layout_file_path))
+        print(f"Using PDK: {pdk_name}")
+        layout = gdstk.read_oas(layout_file_path)
+    else:
+        print("Reading GDSII file {}...".format(layout_file_path))
+        print(f"Using PDK: {pdk_name}")
+        layout = gdstk.read_gds(layout_file_path)
 
     gltf = pygltflib.GLTF2()
     scene = pygltflib.Scene()
@@ -138,7 +143,7 @@ def gds2gltf(
 
     meshes_lib = {}
 
-    for cell in gdsii.cells.values():  # loop through cells to read paths and polygons
+    for cell in layout.cells:  # loop through cells to read paths and polygons
         layers = {}  # array to hold all geometry, sorted into layers
 
         print("\nProcessing cell: ", cell.name)
@@ -160,20 +165,20 @@ def gds2gltf(
 
             layers[lnum] = [] if not lnum in layers else layers[lnum]
             # add paths (converted to polygons) that layer
-            for poly in path.get_polygons():
-                layers[lnum].append((poly, None, False))
+            for poly in path.to_polygons():
+                layers[lnum].append((poly.points, None, False))
 
         print("\tpolygons loop. total polygons:", len(cell.polygons))
         # loop through polygons (and boxes) in cell
         for polygon in cell.polygons:
-            lnum = (polygon.layers[0], polygon.datatypes[0])  # same as before...
+            # same as before...
+            lnum = (polygon.layer, polygon.datatype)
 
             if not lnum in layerstack.keys():
                 continue
 
             layers[lnum] = [] if not lnum in layers else layers[lnum]
-            for poly in polygon.polygons:
-                layers[lnum].append((poly, None, False))
+            layers[lnum].append((polygon.points, None, False))
 
         """
         At this point, "layers" is a Python dictionary structured as follows:
@@ -233,17 +238,20 @@ def gds2gltf(
                 # this confuses the triangulation library, which fills the holes
                 # with extra triangles. Avoid this by moving each edge back a
                 # very small amount so that no two edges of the same polygon overlap.
-                delta = 0.00001  # inset each vertex by this much (smaller has broken one file)
+                # inset each vertex by this much (smaller has broken one file)
+                delta = 0.00001
                 points_i = polygon  # get list of points
                 points_j = np.roll(points_i, -1, axis=0)  # shift by 1
                 points_k = np.roll(points_i, 1, axis=0)  # shift by -1
                 # calculate normals for each edge of each vertex (in parallel, for speed)
                 normal_ij = np.stack(
-                    (points_j[:, 1] - points_i[:, 1], points_i[:, 0] - points_j[:, 0]),
+                    (points_j[:, 1] - points_i[:, 1],
+                     points_i[:, 0] - points_j[:, 0]),
                     axis=1,
                 )
                 normal_ik = np.stack(
-                    (points_i[:, 1] - points_k[:, 1], points_k[:, 0] - points_i[:, 0]),
+                    (points_i[:, 1] - points_k[:, 1],
+                     points_k[:, 0] - points_i[:, 0]),
                     axis=1,
                 )
                 length_ij = np.linalg.norm(normal_ij, axis=1)
@@ -267,7 +275,8 @@ def gds2gltf(
                 # These parts will be removed from the triangulation, and this solves
                 # just this case with no adverse affects elsewhere.
                 hole_delta = 0.00001  # small fraction of delta
-                holes = 0.5 * (points_j + points_i) - hole_delta * delta * normal_ij
+                holes = 0.5 * (points_j + points_i) - \
+                    hole_delta * delta * normal_ij
                 # HOWEVER: sometimes this causes a segmentation fault in the triangle
                 # library. I've observed this as a result of certain various polygons.
                 # Frustratingly, the fault can be bypassed by *rotating the polygons*
@@ -279,7 +288,8 @@ def gds2gltf(
 
                 # triangulate: compute triangles to fill polygon
                 point_array = np.arange(num_polygon_points)
-                edges = np.transpose(np.stack((point_array, np.roll(point_array, 1))))
+                edges = np.transpose(
+                    np.stack((point_array, np.roll(point_array, 1))))
                 if use_holes:
                     triangles = triangle.triangulate(
                         dict(vertices=polygon, segments=edges, holes=holes), opts="p"
@@ -311,17 +321,21 @@ def gds2gltf(
             indices_offset = 0
             for i, (_, poly_data, clockwise) in enumerate(polygons):
 
-                p_positions_top = np.insert(poly_data["vertices"], 2, zmax, axis=1)
-                p_positions_bottom = np.insert(poly_data["vertices"], 2, zmin, axis=1)
+                p_positions_top = np.insert(
+                    poly_data["vertices"], 2, zmax, axis=1)
+                p_positions_bottom = np.insert(
+                    poly_data["vertices"], 2, zmin, axis=1)
 
-                p_positions = np.concatenate((p_positions_top, p_positions_bottom))
+                p_positions = np.concatenate(
+                    (p_positions_top, p_positions_bottom))
                 p_indices_top = poly_data["triangles"]
                 p_indices_bottom = np.flip(
                     (p_indices_top + len(p_positions_top)), axis=1
                 )
 
                 ind_list_top = np.arange(len(p_positions_top))
-                ind_list_bottom = np.arange(len(p_positions_top)) + len(p_positions_top)
+                ind_list_bottom = np.arange(
+                    len(p_positions_top)) + len(p_positions_top)
 
                 if clockwise:
                     ind_list_top = np.flip(ind_list_top, axis=0)
@@ -336,18 +350,21 @@ def gds2gltf(
                     axis=1,
                 )
                 p_indices_left = np.stack(
-                    (np.roll(ind_list_top, -1, axis=0), ind_list_top, ind_list_bottom),
+                    (np.roll(ind_list_top, -1, axis=0),
+                     ind_list_top, ind_list_bottom),
                     axis=1,
                 )
 
                 p_indices = np.concatenate(
-                    (p_indices_top, p_indices_bottom, p_indices_right, p_indices_left)
+                    (p_indices_top, p_indices_bottom,
+                     p_indices_right, p_indices_left)
                 )
 
                 if len(gltf_positions) == 0:
                     gltf_positions = p_positions
                 else:
-                    gltf_positions = np.append(gltf_positions, p_positions, axis=0)
+                    gltf_positions = np.append(
+                        gltf_positions, p_positions, axis=0)
                 if len(gltf_indices) == 0:
                     gltf_indices = p_indices
                 else:
@@ -422,40 +439,36 @@ def gds2gltf(
         for ref in c.references:
             instance_node = pygltflib.Node()
             instance_node.extras = {}
-            instance_node.extras["type"] = ref.ref_cell.name
-            if ref.properties.get(cell_name_property) == None:
+            instance_node.extras["type"] = ref.cell.name
+            instance_node.name = ref.get_gds_property(cell_name_property)
+            if instance_node.name is None:
                 instance_node.name = "???"
-            else:
-                instance_node.name = ref.properties[cell_name_property]
 
-            print(prefix, instance_node.name, "(", ref.ref_cell.name + ")")
+            print(prefix, instance_node.name, "(", ref.cell.name + ")")
             instance_node.translation = [ref.origin[0], ref.origin[1], 0]
-            if ref.rotation != None:
-                if ref.rotation == 90:
-                    instance_node.rotation = [0, 0, 0.7071068, 0.7071068]
-                elif ref.rotation == 180:
-                    instance_node.rotation = [0, 0, 1, 0]
-                elif ref.rotation == 270:
-                    instance_node.rotation = [0, 0, 0.7071068, -0.7071068]
+            if ref.rotation is not None:
+                instance_node.rotation = [0, 0,
+                                          round(math.sin(ref.rotation / 2), 7),
+                                          round(math.cos(ref.rotation / 2), 7)]
             if ref.x_reflection:
                 instance_node.scale = [1, -1, 1]
 
             for layer in layerstack.values():
-                lib_name = ref.ref_cell.name + "_" + layer["name"]
-                if meshes_lib.get(lib_name) != None:
+                lib_name = ref.cell.name + "_" + layer["name"]
+                if meshes_lib.get(lib_name) is not None:
                     layer_node = pygltflib.Node()
                     layer_node.name = lib_name
                     layer_node.mesh = meshes_lib[lib_name]
                     gltf.nodes.append(layer_node)
                     instance_node.children.append(len(gltf.nodes) - 1)
 
-            if len(ref.ref_cell.references) > 0:
-                add_cell_node(ref.ref_cell, instance_node, prefix + "\t")
+            if len(ref.cell.references) > 0:
+                add_cell_node(ref.cell, instance_node, prefix + "\t")
 
             gltf.nodes.append(instance_node)
             parent_node.children.append(len(gltf.nodes) - 1)
 
-    main_cell = gdsii.top_level()[0]
+    main_cell = layout.top_level()[0]
 
     root_node = pygltflib.Node()
     root_node.name = main_cell.name  # "ROOT"
@@ -500,11 +513,12 @@ def main():
         choices=PDKS.keys(),
     )
     parser.add_argument("-o", "--output", type=str, help="Output file")
-    parser.add_argument("--validate", action="store_true", help="Validate the output")
+    parser.add_argument("--validate", action="store_true",
+                        help="Validate the output")
     args = parser.parse_args()
 
-    gdsii_file_path = sys.argv[1]
-    gltf_file = args.output if args.output else gdsii_file_path + ".gltf"
+    layout_file_path = sys.argv[1]
+    gltf_file = args.output if args.output else layout_file_path + ".gltf"
     gds2gltf(args.gds_file, gltf_file, enable_validate=args.validate)
 
 
