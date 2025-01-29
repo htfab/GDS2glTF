@@ -16,8 +16,9 @@ All units, including the units of the exported file, are the GDSII file's
 user units (often microns).
 """
 
+import math
 import sys  # read command-line arguments
-import gdspy  # open gds file
+import gdstk  # open gds file
 import numpy as np  # fast math on lots of points
 import triangle  # triangulate polygons
 import argparse  # parse command-line arguments
@@ -91,7 +92,7 @@ DEFAULT_PDK = "sky130A"
 
 
 def gds2gltf(
-    gdsii_file_path: str,
+    layout_file_path: str,
     gltf_file_path: str,
     pdk_name=DEFAULT_PDK,
     enable_validate=False,
@@ -104,16 +105,20 @@ def gds2gltf(
     else:
         raise Exception(f"PDK {pdk_name} not supported")
 
-    # First, the input file is read using the gdspy library, which interprets the
+    # First, the input file is read using the gdstk library, which interprets the
     # GDSII file and formats the data Python-style.
-    # See https://gdspy.readthedocs.io/en/stable/index.html for documentation.
+    # See https://heitzmann.github.io/gdstk/ for documentation.
     # Second, the boundaries of each shape (polygon or path) are extracted for
     # further processing.
 
-    print("Reading GDSII file {}...".format(gdsii_file_path))
-    print(f"Using PDK: {pdk_name}")
-    gdsii = gdspy.GdsLibrary()
-    gdsii.read_gds(gdsii_file_path, units="import")
+    if layout_file_path.endswith(".oas"):
+        print("Reading OASIS file {}...".format(layout_file_path))
+        print(f"Using PDK: {pdk_name}")
+        layout = gdstk.read_oas(layout_file_path)
+    else:
+        print("Reading GDSII file {}...".format(layout_file_path))
+        print(f"Using PDK: {pdk_name}")
+        layout = gdstk.read_gds(layout_file_path)
 
     gltf = pygltflib.GLTF2()
     scene = pygltflib.Scene()
@@ -138,7 +143,7 @@ def gds2gltf(
 
     meshes_lib = {}
 
-    for cell in gdsii.cells.values():  # loop through cells to read paths and polygons
+    for cell in layout.cells:  # loop through cells to read paths and polygons
         layers = {}  # array to hold all geometry, sorted into layers
 
         print("\nProcessing cell: ", cell.name)
@@ -160,20 +165,19 @@ def gds2gltf(
 
             layers[lnum] = [] if not lnum in layers else layers[lnum]
             # add paths (converted to polygons) that layer
-            for poly in path.get_polygons():
-                layers[lnum].append((poly, None, False))
+            for poly in path.to_polygons():
+                layers[lnum].append((poly.points, None, False))
 
         print("\tpolygons loop. total polygons:", len(cell.polygons))
         # loop through polygons (and boxes) in cell
         for polygon in cell.polygons:
-            lnum = (polygon.layers[0], polygon.datatypes[0])  # same as before...
+            lnum = (polygon.layer, polygon.datatype)  # same as before...
 
             if not lnum in layerstack.keys():
                 continue
 
             layers[lnum] = [] if not lnum in layers else layers[lnum]
-            for poly in polygon.polygons:
-                layers[lnum].append((poly, None, False))
+            layers[lnum].append((polygon.points, None, False))
 
         """
         At this point, "layers" is a Python dictionary structured as follows:
@@ -422,40 +426,36 @@ def gds2gltf(
         for ref in c.references:
             instance_node = pygltflib.Node()
             instance_node.extras = {}
-            instance_node.extras["type"] = ref.ref_cell.name
-            if ref.properties.get(cell_name_property) == None:
+            instance_node.extras["type"] = ref.cell.name
+            instance_node.name = ref.get_gds_property(cell_name_property)
+            if instance_node.name is None:
                 instance_node.name = "???"
-            else:
-                instance_node.name = ref.properties[cell_name_property]
 
-            print(prefix, instance_node.name, "(", ref.ref_cell.name + ")")
+            print(prefix, instance_node.name, "(", ref.cell.name + ")")
             instance_node.translation = [ref.origin[0], ref.origin[1], 0]
-            if ref.rotation != None:
-                if ref.rotation == 90:
-                    instance_node.rotation = [0, 0, 0.7071068, 0.7071068]
-                elif ref.rotation == 180:
-                    instance_node.rotation = [0, 0, 1, 0]
-                elif ref.rotation == 270:
-                    instance_node.rotation = [0, 0, 0.7071068, -0.7071068]
+            if ref.rotation is not None:
+                instance_node.rotation = [0, 0,
+                                          round(math.sin(ref.rotation / 2), 7),
+                                          round(math.cos(ref.rotation / 2), 7)]
             if ref.x_reflection:
                 instance_node.scale = [1, -1, 1]
 
             for layer in layerstack.values():
-                lib_name = ref.ref_cell.name + "_" + layer["name"]
-                if meshes_lib.get(lib_name) != None:
+                lib_name = ref.cell.name + "_" + layer["name"]
+                if meshes_lib.get(lib_name) is not None:
                     layer_node = pygltflib.Node()
                     layer_node.name = lib_name
                     layer_node.mesh = meshes_lib[lib_name]
                     gltf.nodes.append(layer_node)
                     instance_node.children.append(len(gltf.nodes) - 1)
 
-            if len(ref.ref_cell.references) > 0:
-                add_cell_node(ref.ref_cell, instance_node, prefix + "\t")
+            if len(ref.cell.references) > 0:
+                add_cell_node(ref.cell, instance_node, prefix + "\t")
 
             gltf.nodes.append(instance_node)
             parent_node.children.append(len(gltf.nodes) - 1)
 
-    main_cell = gdsii.top_level()[0]
+    main_cell = layout.top_level()[0]
 
     root_node = pygltflib.Node()
     root_node.name = main_cell.name  # "ROOT"
@@ -503,8 +503,8 @@ def main():
     parser.add_argument("--validate", action="store_true", help="Validate the output")
     args = parser.parse_args()
 
-    gdsii_file_path = sys.argv[1]
-    gltf_file = args.output if args.output else gdsii_file_path + ".gltf"
+    layout_file_path = sys.argv[1]
+    gltf_file = args.output if args.output else layout_file_path + ".gltf"
     gds2gltf(args.gds_file, gltf_file, enable_validate=args.validate)
 
 
